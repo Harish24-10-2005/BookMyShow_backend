@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from typing import Optional
 
@@ -29,6 +30,13 @@ router = APIRouter()
 
 # Settings
 settings = get_settings()
+
+
+def _is_connectivity_error(exc: Exception) -> bool:
+    """Return True when request failed because Supabase was unreachable."""
+    if isinstance(exc, httpx.ConnectError):
+        return True
+    return "Device or resource busy" in str(exc)
 
 
 def get_user_id_from_token(authorization: Optional[str] = Header(None)) -> Optional[str]:
@@ -66,28 +74,48 @@ def health() -> HealthResponse:
 @router.get("/cities", response_model=list[City])
 def list_cities() -> list[City]:
     if is_supabase_enabled():
-        return city_repo.list_all()
+        try:
+            return city_repo.list_all()
+        except Exception as exc:
+            if not _is_connectivity_error(exc):
+                raise
+            print(f"Supabase unavailable for /cities, falling back to in-memory catalog: {exc}")
     return catalog_service.list_cities()
 
 
 @router.get("/movies", response_model=list[Movie])
 def list_movies(city_id: str | None = Query(None), q: str | None = Query(None)) -> list[Movie]:
     if is_supabase_enabled():
-        return movie_repo.list_all(q=q)
+        try:
+            return movie_repo.list_all(q=q)
+        except Exception as exc:
+            if not _is_connectivity_error(exc):
+                raise
+            print(f"Supabase unavailable for /movies, falling back to in-memory catalog: {exc}")
     return catalog_service.list_movies(city_id=city_id, q=q)
 
 
 @router.get("/venues", response_model=list[Venue])
 def list_venues(city_id: str | None = Query(None)) -> list[Venue]:
     if is_supabase_enabled():
-        return venue_repo.list_all(city_id=city_id)
+        try:
+            return venue_repo.list_all(city_id=city_id)
+        except Exception as exc:
+            if not _is_connectivity_error(exc):
+                raise
+            print(f"Supabase unavailable for /venues, falling back to in-memory catalog: {exc}")
     return catalog_service.list_venues(city_id=city_id)
 
 
 @router.get("/shows", response_model=list[Show])
 def list_shows(movie_id: str | None = Query(None), venue_id: str | None = Query(None)) -> list[Show]:
     if is_supabase_enabled():
-        return show_repo.list_all(movie_id=movie_id, venue_id=venue_id)
+        try:
+            return show_repo.list_all(movie_id=movie_id, venue_id=venue_id)
+        except Exception as exc:
+            if not _is_connectivity_error(exc):
+                raise
+            print(f"Supabase unavailable for /shows, falling back to in-memory catalog: {exc}")
     return catalog_service.list_shows(movie_id=movie_id, venue_id=venue_id)
 
 
